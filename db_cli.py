@@ -1,13 +1,17 @@
 #!/usr/bin/env python2.7
 # Created by Aaron Cohen
-from simple_database import AbstractDatabaseInterface, NoTransactionException, Database
+import sys
+from simple_database import NoTransactionException, Database
 
 
-class CommandLineDatabaseInterface(AbstractDatabaseInterface):
+class CommandLineDatabaseInterface(object):
+    def __init__(self, database):
+        self._database = database
+
     def run(self):
         while True:
             try:
-                self.parse_command(raw_input())
+                self.parse_command(raw_input().strip())
             except BadCommandException as e:
                 print e
             except EOFError:
@@ -69,6 +73,6 @@ class BadCommandException(Exception):
         pass
 
 if __name__ == '__main__':
-    database = Database()
-    cli = CommandLineDatabaseInterface(database)
+    test_database = Database()
+    cli = CommandLineDatabaseInterface(test_database)
     cli.run()

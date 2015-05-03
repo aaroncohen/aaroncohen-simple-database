@@ -4,21 +4,20 @@
 
 class Database(object):
     """
-    This is the heart of the database. It stores data in dicts, which generally have O(n) behavior for most operations.
-    It keeps an ordered list of transactions, which are stored as shallow copies of the original data or the previous
-    scope.
+    This is the heart of the database. It stores data in dicts, which have O(n) behavior for most operations.
+    It keeps an ordered list of transactions, which are stored as dicts as well. When nested transactions are created,
+    a shallow copy of the previous transaction is used, which saves us the work of iterating over all of the
+    transactions to coalesce them on commit. As transactions are never going to be shared between multiple
+    connections/users/threads, there shouldn't be problems with lower tier transactions being modified underneath.
 
-    This approach will break down if used with more than one user or thread. A model where transactions have parent
-    transactions and are then merged is the better approach for any sort of production system using something other
-    than a command line interface. That seemed to exceed the requirements somewhat, though.
-
-    That said, this was designed to be modular enough that a network-based descendent of AbstractDatabaseInterface
-    could be implemented without much refactoring.
+    In order to make this database usable in a production environment, it would need to be modified to have a connection
+    pool of some sort. Transactions would exist on a per-connection basis, and any uncommitted transactions would be
+    cleaned up upon the closing of the connection.
     """
 
     def __init__(self):
-        self._data = {}
-        self._transactions = []
+        self._data = {}  # the main data-store
+        self._transactions = []  # if a connection pool were implemented, transactions would be per-connection
 
     def set(self, name, value):
         if len(self._transactions):
@@ -28,27 +27,38 @@ class Database(object):
 
     def get(self, name, default=None):
         if len(self._transactions):
-            return self._transactions[-1].get(name, default)
+            # We create a temporary copy here in order to simulate the transaction having been committed already,
+            # as users expect to be able to query both changed keys and unchanged keys that don't exist in the
+            # transaction.
+            temp_merged_data = self._data.copy()  # shallow copy
+            temp_merged_data.update(self._transactions[-1])
+            return temp_merged_data.get(name, default)
         else:
             return self._data.get(name, default)
 
     def unset(self, name):
         if len(self._transactions):
-            del self._transactions[-1][name]
+            # Keys with the value None are treated the same as keys that don't exist, though the key's name pollutes the
+            # db a little. Cleaning these out of the database at commit time might give an undesirable perf hit, so a
+            # periodic garbage collection mechansim or some other means of tagging for deletion might make sense.
+            self._transactions[-1][name] = None
         else:
             del self._data[name]
 
     def num_equal_to(self, value):
         if len(self._transactions):
-            return self._transactions[-1].values().count(value)
+            temp_merged_data = self._data.copy()  # shallow copy
+            temp_merged_data.update(self._transactions[-1])
+            return temp_merged_data.values().count(value)
         else:
             return self._data.values().count(value)
 
     def begin(self):
         if len(self._transactions):
+            # We make a shallow copy here to avoid the pain of progressively merging any nested transactions
             self._transactions.append(self._transactions[-1].copy())  # shallow copy
         else:
-            self._transactions.append(self._data.copy())  # shallow copy
+            self._transactions.append({})
 
     def rollback(self):
         if len(self._transactions):
@@ -58,7 +68,7 @@ class Database(object):
 
     def commit(self):
         if len(self._transactions):
-            self._data = self._transactions[-1]
+            self._data.update(self._transactions[-1])
             self._transactions = []
         else:
             raise NoTransactionException()
@@ -66,17 +76,6 @@ class Database(object):
 
 class NoTransactionException(Exception):
         pass
-
-
-class AbstractDatabaseInterface(object):
-    def __init__(self, database):
-        self._database = database
-
-    def run(self):
-        raise NotImplementedError()
-
-    def parse_command(self, command_string):
-        raise NotImplementedError()
 
 
 if __name__ == '__main__':
