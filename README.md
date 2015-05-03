@@ -13,7 +13,7 @@ An implementation of the simple database described in the [Thumbtack engineering
 
 
 The heart of the database is in [simple_database.py](simple_database.py). It stores data in dicts, which generally have 
-O(n) behavior for most operations. It keeps an ordered list of transactions, which are stored as shallow copies of the 
+[O(n) behavior for most operations](https://wiki.python.org/moin/TimeComplexity). It keeps an ordered list of transactions, which are stored as shallow copies of the 
 original data or the previous scope. When a transaction is committed, that transaction replaces the main data dict.
 
 This approach will break down if used with more than one user or thread. A model where transactions have parent
